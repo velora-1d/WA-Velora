@@ -136,6 +136,11 @@ select:disabled {
   cursor: not-allowed;
 }
 
+select option {
+  background-color: var(--bg-white, #fff);
+  color: var(--text-primary, #0f172a);
+}
+
 /* GLOBAL MODAL STYLES */
 
 /* Modal Overlay */
