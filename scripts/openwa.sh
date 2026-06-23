@@ -60,10 +60,10 @@ get_profiles() {
         log_info "Redis: disabled"
     fi
 
-    # MinIO (built-in S3)
-    if [ "${STORAGE_TYPE:-local}" = "s3" ] && [ "${MINIO_BUILTIN:-false}" = "true" ]; then
-        profiles="$profiles --profile minio"
-        log_info "Storage: built-in MinIO"
+    # RustFS (built-in S3-compatible)
+    if [ "${STORAGE_TYPE:-local}" = "s3" ] && { [ "${RUSTFS_BUILTIN:-false}" = "true" ] || [ "${MINIO_BUILTIN:-false}" = "true" ]; }; then
+        profiles="$profiles --profile rustfs"
+        log_info "Storage: built-in RustFS"
     elif [ "${STORAGE_TYPE:-local}" = "s3" ]; then
         log_info "Storage: external S3 (${S3_ENDPOINT})"
     else
@@ -183,7 +183,7 @@ cmd_help() {
     echo "Profile activation is automatic based on .env:"
     echo "  POSTGRES_BUILTIN=true  → activates postgres profile"
     echo "  REDIS_BUILTIN=true     → activates redis profile"
-    echo "  MINIO_BUILTIN=true     → activates minio profile"
+    echo "  RUSTFS_BUILTIN=true    → activates rustfs profile"
     echo ""
 }
 

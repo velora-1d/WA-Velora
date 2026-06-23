@@ -21,13 +21,22 @@
 #
 set -euo pipefail
 
+# Load environment from project root if it exists
+if [ -f "$(dirname "$0")/../.env" ]; then
+  ENV_DB_NAME=$(grep -E "^DATABASE_NAME=" "$(dirname "$0")/../.env" | cut -d'=' -f2- | tr -d '\r' | xargs || true)
+  if [ -n "$ENV_DB_NAME" ]; then
+    DATABASE_NAME="$ENV_DB_NAME"
+  fi
+fi
+
 DATA_DIR="${OPENWA_DATA_DIR:-./data}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 DATABASE_TYPE="${DATABASE_TYPE:-sqlite}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
 MAIN_DB="$DATA_DIR/main.sqlite"
-DATA_DB="$DATA_DIR/openwa.sqlite"
+DB_FILENAME=$(basename "${DATABASE_NAME:-openwa.sqlite}")
+DATA_DB="$DATA_DIR/$DB_FILENAME"
 SESSIONS_DIR="$DATA_DIR/sessions"
 MEDIA_DIR="$DATA_DIR/media"
 
@@ -72,7 +81,7 @@ if [ "$DATABASE_TYPE" = "postgres" ]; then
       "${DATABASE_NAME:-openwa}" >"$STAGE/database.sql"
   fi
 else
-  log "Backing up data store (openwa.sqlite)"
+  log "Backing up data store ($DB_FILENAME)"
   backup_sqlite "$DATA_DB" "$STAGE/openwa.sqlite"
 fi
 

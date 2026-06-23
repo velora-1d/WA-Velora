@@ -15,8 +15,17 @@
 #
 set -euo pipefail
 
+# Load environment from project root if it exists
+if [ -f "$(dirname "$0")/../.env" ]; then
+  ENV_DB_NAME=$(grep -E "^DATABASE_NAME=" "$(dirname "$0")/../.env" | cut -d'=' -f2- | tr -d '\r' | xargs || true)
+  if [ -n "$ENV_DB_NAME" ]; then
+    DATABASE_NAME="$ENV_DB_NAME"
+  fi
+fi
+
 ARCHIVE="${1:-}"
 DATA_DIR="${OPENWA_DATA_DIR:-./data}"
+DB_FILENAME=$(basename "${DATABASE_NAME:-openwa.sqlite}")
 
 log() { echo "[restore] $*"; }
 
@@ -48,8 +57,8 @@ else
 fi
 
 if [ -f "$STAGE/openwa.sqlite" ]; then
-  log "Restoring data store (openwa.sqlite)"
-  cp "$STAGE/openwa.sqlite" "$DATA_DIR/openwa.sqlite"
+  log "Restoring data store ($DB_FILENAME)"
+  cp "$STAGE/openwa.sqlite" "$DATA_DIR/$DB_FILENAME"
 fi
 
 if [ -d "$STAGE/sessions" ]; then

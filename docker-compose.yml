@@ -5,7 +5,7 @@ services:
   # ===== CORE: Docker Socket Proxy (sole container with /var/run/docker.sock access) =====
   docker-proxy:
     image: tecnativa/docker-socket-proxy
-    container_name: openwa-docker-proxy
+    container_name: velora-docker-proxy
     restart: unless-stopped
     # Only on the isolated internal network — reachable solely by openwa-api, NOT the
     # dashboard or any other peer (finding H6). `internal: true` also denies the proxy
@@ -32,7 +32,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: openwa-api
+    container_name: velora-api
     restart: unless-stopped
     # App network for datastores + the isolated network to reach
     # docker-proxy (DOCKER_HOST). createService() in docker.service.ts attaches
@@ -129,7 +129,7 @@ services:
       # Docker socket proxy (openwa-api never touches /var/run/docker.sock directly)
       - DOCKER_HOST=tcp://docker-proxy:2375
     volumes:
-      - openwa-data:/app/data
+      - velora-data:/app/data
       - ./docker-compose.yml:/app/docker-compose.yml:ro
     depends_on:
       docker-proxy:
@@ -163,7 +163,7 @@ services:
   # ===== OPTIONAL: Built-in PostgreSQL =====
   postgres:
     image: postgres:16-alpine
-    container_name: openwa-postgres
+    container_name: velora-postgres
     profiles: ['postgres', 'full']
     restart: unless-stopped
     networks:
@@ -191,7 +191,7 @@ services:
   # ===== OPTIONAL: Built-in Redis =====
   redis:
     image: redis:7-alpine
-    container_name: openwa-redis
+    container_name: velora-redis
     profiles: ['redis', 'full']
     restart: unless-stopped
     networks:
@@ -210,29 +210,31 @@ services:
       - 'com.openwa.service=cache'
       - 'com.openwa.builtin=true'
 
-  # ===== OPTIONAL: Built-in MinIO (S3-compatible) =====
-  minio:
-    image: minio/minio
-    container_name: openwa-minio
-    profiles: ['minio', 'full']
+  # ===== OPTIONAL: Built-in RustFS (S3-compatible) =====
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: velora-rustfs
+    profiles: ['rustfs', 'minio', 'full']
     restart: unless-stopped
     networks:
       - openwa-network
     security_opt:
       - 'no-new-privileges:true'
-    command: server /data --console-address ":9001"
     environment:
-      # M16: no committed default creds. MinIO refuses to start with empty root creds
-      # (clear fail-fast); the app's production boot guard rejects empty/placeholder secrets.
+      # MinIO compatible keys (for backend fallback if needed)
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-}
+      # RustFS specific environment keys
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-}
+      RUSTFS_VOLUMES: /data
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     ports:
       - '127.0.0.1:9000:9000'
       - '127.0.0.1:9001:9001'
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/']
       interval: 10s
       timeout: 5s
       retries: 3
@@ -241,13 +243,13 @@ services:
       - 'com.openwa.builtin=true'
 
 volumes:
-  openwa-data:
+  velora-data:
     driver: local
   postgres-data:
     driver: local
   redis-data:
     driver: local
-  minio-data:
+  rustfs-data:
     driver: local
 
 networks:
