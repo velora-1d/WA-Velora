@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type CSSProperties } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
@@ -21,11 +21,160 @@ import {
   ChevronLeft,
   ChevronRight,
   Languages,
+  HelpCircle,
 } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { type UserRole } from '../hooks/useRole';
 import { languageOptions, resolveSupportedLanguage, rtlLanguages, type SupportedLanguage } from '../i18n';
 import './Layout.css';
+
+interface GuideContent {
+  title: string;
+  description: string;
+  features: string[];
+  flowSteps: string[];
+  tips?: string;
+  warning?: string;
+  caution?: string;
+}
+
+const guides: Record<string, GuideContent> = {
+  '/': {
+    title: '📊 Dashboard',
+    description: 'Menu Dashboard adalah pusat informasi utama (main overview) yang menyajikan rangkuman aktivitas sistem secara real-time untuk memantau kesehatan aplikasi.',
+    features: [
+      'Total Pesan Terkirim: Akumulasi pesan sukses dikirim dari semua sesi.',
+      'Pesan Tertunda (Pending): Jumlah pesan dalam antrean yang menunggu giliran kirim.',
+      'Pesan Gagal: Total pesan gagal karena nomor tidak valid atau masalah koneksi.',
+      'Sesi Aktif: Jumlah sesi WhatsApp terhubung (Connected) dibandingkan total sesi.'
+    ],
+    flowSteps: [
+      'Pantau kartu status Sesi Aktif secara berkala.',
+      'Periksa rasio Pesan Gagal. Jika meningkat tajam, kemungkinan nomor terblokir (banned).',
+      'Gunakan grafik lalu lintas harian untuk mengukur beban request dari aplikasi luar.'
+    ],
+    tips: 'Data pada Dashboard diperbarui secara real-time menggunakan WebSocket. Jika grafik terhenti, silakan refresh halaman.'
+  },
+  '/sessions': {
+    title: '🔌 Kelola Sesi (Sessions)',
+    description: 'Menu Sesi digunakan untuk mengelola daur hidup (lifecycle) koneksi akun WhatsApp Anda menggunakan Chromium (whatsapp-web.js) atau Baileys.',
+    features: [
+      'Tambah Sesi: Mendaftarkan instans WhatsApp baru dengan ID unik.',
+      'Scan QR Code: Menampilkan kode QR untuk proses login WhatsApp Web.',
+      'Restart Sesi: Mematikan dan menghidupkan kembali instans Chromium yang macet.',
+      'Hapus Sesi: Menghapus data sesi secara permanen.'
+    ],
+    flowSteps: [
+      'Klik tombol "Tambah Sesi" di kanan atas.',
+      'Isi Session ID (unik) dan pilih Engine (whatsapp-web.js / baileys).',
+      'Klik "Scan QR" pada baris sesi baru (tunggu Chromium menyala di server).',
+      'Buka WhatsApp HP -> Perangkat Tertaut -> Tautkan Perangkat, lalu scan QR Code di layar.',
+      'Tunggu status berubah otomatis dari Initializing -> Authenticating -> Connected.'
+    ],
+    tips: 'Setiap sesi whatsapp-web.js menjalankan browser Chromium tersendiri yang memakan RAM sekitar 300MB-500MB. Batasi jumlah sesi aktif sesuai kapasitas RAM server.'
+  },
+  '/chats': {
+    title: '👥 Kontak & Grup (Chats)',
+    description: 'Menu Chats digunakan untuk mengelola kontak dan grup WhatsApp yang tersinkronisasi. Di sini Anda bisa mendapatkan JID Grup untuk keperluan pengiriman pesan massal.',
+    features: [
+      'Sinkronisasi Kontak: Menarik daftar kontak terbaru dari HP ke database.',
+      'Ekspor Nomor Anggota Grup: Mengambil daftar nomor anggota grup untuk lead database.',
+      'Salin JID Grup: Mendapatkan ID unik grup (misal: 120363028392019@g.us) untuk tujuan API.'
+    ],
+    flowSteps: [
+      'Pilih Sesi WhatsApp aktif dari dropdown di bagian atas.',
+      'Klik "Sinkronkan Kontak" atau "Muat Grup" untuk memperbarui data.',
+      'Gunakan kolom pencarian untuk menyaring nama kontak atau nama grup.',
+      'Salin JID Grup dari daftar untuk ditaruh di parameter payload API.'
+    ]
+  },
+  '/webhooks': {
+    title: '🪝 Webhook',
+    description: 'Menu Webhook menghubungkan Velora WA dengan backend aplikasi Anda secara asinkron (real-time notification callback) untuk event WhatsApp.',
+    features: [
+      'Daftar Webhook: Mendaftarkan URL target HTTP POST eksternal.',
+      'Filter Event: Mengirim event spesifik saja (misal: message.received, session.status).',
+      'Delivery Logs: Memantau riwayat HTTP response status code dari server Anda.'
+    ],
+    flowSteps: [
+      'Klik "Tambah Webhook" dan isi URL Target server Anda.',
+      'Pilih jenis event yang ingin ditangkap (misal: message.received).',
+      'Kirim pesan WhatsApp dari nomor luar untuk memicu event.',
+      'Periksa tabel Webhook Logs di bawah untuk memastikan respon status 200 OK dari server Anda.'
+    ],
+    caution: 'Server Anda wajib membalas webhook Velora dalam waktu < 5 detik dengan status HTTP 200. Keterlambatan respon akan memicu pengiriman ulang (retry) otomatis.'
+  },
+  '/api-keys': {
+    title: '⚙️ Pengaturan Keamanan (Settings / API Keys)',
+    description: 'Menu ini digunakan untuk mengatur kredensial otentikasi global, limitasi akses API, serta melihat dokumentasi interaktif Swagger.',
+    features: [
+      'API Master Key: Kunci utama (Bearer Token) untuk otentikasi seluruh endpoint API.',
+      'Swagger Docs: Antarmuka pengujian dan dokumentasi endpoint secara langsung.'
+    ],
+    flowSteps: [
+      'Salin token dari kolom API Master Key.',
+      'Klik tombol "Buka Dokumentasi Swagger" untuk mencoba endpoint.',
+      'Lakukan rotasi API Master Key secara berkala demi keamanan.',
+      'Perbarui token yang digunakan pada seluruh aplikasi eksternal Anda.'
+    ]
+  },
+  '/message-tester': {
+    title: '✉️ Pesan & Message Tester',
+    description: 'Menu Message Tester menyediakan antarmuka pengiriman pesan manual (untuk uji coba cepat) serta menampilkan log/riwayat lengkap lalu lintas pesan masuk dan keluar.',
+    features: [
+      'Kirim Pesan Instan: Kirim teks, gambar, berkas, atau dokumen secara langsung.',
+      'Tipe Pesan Fleksibel: Pilihan input manual teks atau unggah berkas media.',
+      'Uji Coba Cepat: Memastikan koneksi API dan sesi WhatsApp berjalan lancar.'
+    ],
+    flowSteps: [
+      'Pilih Sesi Pengirim aktif.',
+      'Masukkan Nomor Penerima dengan kode negara (contoh: 628123456789).',
+      'Pilih tipe pesan (Text atau Media).',
+      'Tulis pesan atau unggah berkas, lalu klik "Kirim" dan periksa status pengirimannya.'
+    ],
+    warning: 'Hindari mengirim pesan blast dalam jumlah sangat besar sekaligus tanpa jeda waktu agar nomor Anda tidak diblokir (banned) oleh WhatsApp. Atur delay minimal 10-20 detik.'
+  },
+  '/logs': {
+    title: '📜 Riwayat Logs',
+    description: 'Menu Logs menampilkan catatan aktivitas sistem, log pesan, dan status penanganan webhook untuk keperluan audit dan penelusuran masalah.',
+    features: [
+      'System Audit: Melacak aktivitas penting di sistem (pembuatan sesi, rotasi key).',
+      'Filter Log: Menyaring log berdasarkan level (info, warn, error) dan kata kunci.',
+      'Penelusuran Error: Membantu mendeteksi kenapa webhook gagal atau Chromium crash.'
+    ],
+    flowSteps: [
+      'Pilih kategori log yang ingin dilihat.',
+      'Filter log berdasarkan tanggal atau tipe error jika mencari isu spesifik.',
+      'Gunakan data log untuk memperbaiki integrasi sistem eksternal.'
+    ]
+  },
+  '/infrastructure': {
+    title: '⚙️ Infrastruktur (System Admin Only)',
+    description: 'Menu Infrastruktur digunakan oleh Administrator untuk memantau kesehatan server, penggunaan memori Chromium, dan resource Docker.',
+    features: [
+      'Hardware Monitor: Memantau kapasitas CPU dan penggunaan memori server.',
+      'Docker Container Status: Melihat container sesi WhatsApp yang sedang berjalan.',
+      'System Health: Verifikasi konektivitas ke database PostgreSQL, SQLite, dan Redis.'
+    ],
+    flowSteps: [
+      'Gunakan menu ini untuk memantau beban CPU saat melakukan pesan blast massal.',
+      'Jika server kehabisan memori, matikan beberapa sesi tidak terpakai dari menu Sesi.'
+    ]
+  },
+  '/plugins': {
+    title: '🧩 Plugin & Ekstensi',
+    description: 'Menu Plugin digunakan untuk mengaktifkan atau menonaktifkan fitur tambahan/ekstensi pihak ketiga yang memperluas fungsionalitas Velora.',
+    features: [
+      'Kelola Plugin: Aktifkan atau nonaktifkan plugin eksternal.',
+      'Custom Extension: Pemasangan plugin kustom sesuai kebutuhan alur bisnis Anda.'
+    ],
+    flowSteps: [
+      'Pilih plugin yang ingin diaktifkan.',
+      'Atur parameter plugin pada bagian konfigurasi jika tersedia.',
+      'Simpan perubahan untuk menerapkan fungsi baru pada sesi WhatsApp Anda.'
+    ]
+  }
+};
 
 interface LayoutProps {
   onLogout: () => void;
@@ -62,6 +211,8 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
   const [isAppearanceMenuOpen, setIsAppearanceMenuOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const location = useLocation();
   const languageMenuRef = useRef<HTMLDivElement>(null);
   const appearanceMenuRef = useRef<HTMLDivElement>(null);
 
@@ -312,6 +463,85 @@ export function Layout({ onLogout, userRole }: LayoutProps) {
       <main className={`main-content ${isCollapsed ? 'expanded' : ''} ${isMobile ? 'mobile' : ''}`}>
         <Outlet />
       </main>
+
+      {/* FAB Bantuan Kontekstual */}
+      <button 
+        className="help-fab" 
+        onClick={() => setIsHelpOpen(true)}
+        title="Bantuan Kontekstual"
+        aria-label="Bantuan Kontekstual"
+      >
+        <HelpCircle size={20} />
+        <span>Bantuan</span>
+      </button>
+
+      {/* Drawer Bantuan */}
+      {isHelpOpen && (
+        <div className="help-drawer-overlay" onClick={() => setIsHelpOpen(false)} />
+      )}
+      <div className={`help-drawer ${isHelpOpen ? 'open' : ''}`} role="dialog" aria-labelledby="help-title">
+        <div className="help-drawer-header">
+          <h3 id="help-title">Bantuan: {guides[location.pathname]?.title || 'Panduan Penggunaan'}</h3>
+          <button 
+            className="help-drawer-close" 
+            onClick={() => setIsHelpOpen(false)}
+            aria-label="Tutup Bantuan"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="help-drawer-body">
+          {guides[location.pathname] ? (
+            <>
+              <section>
+                <h4>Deskripsi</h4>
+                <p className="help-description">{guides[location.pathname].description}</p>
+              </section>
+
+              <section>
+                <h4>Fitur Utama</h4>
+                <ul className="help-list">
+                  {guides[location.pathname].features.map((feat, i) => (
+                    <li key={i}>{feat}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section>
+                <h4>Alur Penggunaan</h4>
+                <ol className="help-steps">
+                  {guides[location.pathname].flowSteps.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+              </section>
+
+              {guides[location.pathname].tips && (
+                <div className="help-alert tip">
+                  <strong>💡 Tips:</strong>
+                  {guides[location.pathname].tips}
+                </div>
+              )}
+
+              {guides[location.pathname].warning && (
+                <div className="help-alert warning">
+                  <strong>⚠ Peringatan:</strong>
+                  {guides[location.pathname].warning}
+                </div>
+              )}
+
+              {guides[location.pathname].caution && (
+                <div className="help-alert caution">
+                  <strong>❌ Perhatian:</strong>
+                  {guides[location.pathname].caution}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="help-description">Panduan bantuan untuk menu ini belum tersedia.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
