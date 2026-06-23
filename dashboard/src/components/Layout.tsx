@@ -118,6 +118,21 @@ const guides: Record<string, GuideContent> = {
       'Perbarui token yang digunakan pada seluruh aplikasi eksternal Anda.'
     ]
   },
+  '/templates': {
+    title: '📋 Template Pesan (Templates)',
+    description: 'Menu Template Pesan digunakan untuk menyimpan draf pesan atau format teks siap pakai agar proses pengiriman pesan berulang menjadi lebih praktis dan cepat.',
+    features: [
+      'Buat Template: Menyimpan format pesan teks yang sering dikirim.',
+      'Variabel Dinamis: Menggunakan placeholder seperti {{name}} untuk personalisasi pesan.',
+      'Pencarian Cepat: Menyaring template berdasarkan nama atau kode template.'
+    ],
+    flowSteps: [
+      'Klik tombol "Tambah Template" di kanan atas.',
+      'Masukkan Nama Template dan isi konten pesan (gunakan {{name}} untuk nama penerima).',
+      'Klik "Simpan".',
+      'Gunakan template tersebut pada menu penguji pesan atau API dengan memasukkan ID template.'
+    ]
+  },
   '/message-tester': {
     title: '✉️ Pesan & Message Tester',
     description: 'Menu Message Tester menyediakan antarmuka pengiriman pesan manual (untuk uji coba cepat) serta menampilkan log/riwayat lengkap lalu lintas pesan masuk dan keluar.',

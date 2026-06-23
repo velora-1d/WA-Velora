@@ -206,3 +206,23 @@ Menu **Pengaturan (Settings)** digunakan untuk mengonfigurasi parameter sistem g
 3.  **Rotasi Token Berkala:** Jika Token terindikasi bocor, ketikkan token acak baru di kolom API Master Key lalu klik **Simpan**. Segera perbarui token pada aplikasi klien atau integrasi eksternal Anda.
 
 ---
+
+## 8. 📋 Menu: Template Pesan (Templates)
+
+### A. Deskripsi Detail
+Menu **Template Pesan (Templates)** dirancang untuk mempermudah operasional pengiriman pesan berulang dengan menyimpan format teks/takarir siap pakai. Fitur ini sangat berguna untuk pesan sapaan, balasan FAQ, atau notifikasi transaksional yang memiliki pola teks serupa.
+
+### B. Fitur yang Tersedia
+1.  **Buat Template Baru:** Menyimpan judul dan isi pesan template.
+2.  **Variabel Kustom (Placeholder):** Mendukung penggunaan variabel dinamis seperti `{{name}}` yang akan digantikan otomatis oleh nama penerima saat dikirim.
+3.  **Filter & Pencarian:** Menemukan template secara cepat berdasarkan nama atau ID template.
+
+### C. Alur Penggunaan (Flow Detail)
+1.  **Buat Baru:** Klik tombol **Tambah Template** di sudut kanan atas.
+2.  **Isi Formulir:**
+    *   **Nama Template:** Masukkan judul pengenal (misal: `sapaan-pelanggan`).
+    *   **Konten Pesan:** Ketikkan isi pesan. Gunakan format `{{name}}` di bagian yang ingin diganti nama dinamisnya (contoh: *"Halo {{name}}, terima kasih telah menghubungi kami..."*).
+3.  **Simpan:** Klik **Simpan**.
+4.  **Gunakan via API / Tester:** Panggil ID template tersebut lewat endpoint API pengiriman pesan template, atau gunakan langsung saat memilih template di menu penguji pesan.
+
+---
