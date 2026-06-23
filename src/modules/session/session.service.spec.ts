@@ -78,6 +78,7 @@ describe('SessionService', () => {
       getGroups: jest.fn().mockResolvedValue([]),
       getChats: jest.fn().mockResolvedValue([]),
       sendSeen: jest.fn().mockResolvedValue(true),
+      markUnread: jest.fn().mockResolvedValue(true),
       deleteChat: jest.fn().mockResolvedValue(true),
       sendChatState: jest.fn().mockResolvedValue(undefined),
       resolveContactPhone: jest.fn().mockResolvedValue('628111222333'),
@@ -94,6 +95,7 @@ describe('SessionService', () => {
       emitMessageAck: jest.fn(),
       emitMessageRevoked: jest.fn(),
       emitMessageReaction: jest.fn(),
+      emitQRCode: jest.fn(),
     };
 
     webhookService = {
@@ -751,6 +753,34 @@ describe('SessionService', () => {
       expect(dispatchedEvents('message.failed')).toHaveLength(1);
     });
 
+    it('emits the message:ack hook for every ack so plugins (e.g. a delivery logger) can react', async () => {
+      const callbacks = await startAndCaptureCallbacks();
+
+      callbacks.onMessageAck!('wa-out-1', 'delivered');
+      await flush();
+
+      expect(hookManager.execute).toHaveBeenCalledWith(
+        'message:ack',
+        expect.objectContaining({ messageId: 'wa-out-1', status: 'delivered' }),
+        expect.objectContaining({ source: 'Engine' }),
+      );
+    });
+
+    it("surfaces delivery failures via message:ack with status 'failed' (not the send-time message:failed hook)", async () => {
+      const callbacks = await startAndCaptureCallbacks();
+
+      callbacks.onMessageAck!('wa-out-1', 'failed');
+      await flush();
+
+      expect(hookManager.execute).toHaveBeenCalledWith(
+        'message:ack',
+        expect.objectContaining({ messageId: 'wa-out-1', status: 'failed' }),
+        expect.objectContaining({ source: 'Engine' }),
+      );
+      // message:failed stays reserved for send-time failures (a distinct {error,input} payload).
+      expect(hookManager.execute).not.toHaveBeenCalledWith('message:failed', expect.anything(), expect.anything());
+    });
+
     it("does not upgrade the stored status (or emit message.failed) for a 'sent' status", async () => {
       const callbacks = await startAndCaptureCallbacks();
 
@@ -1328,6 +1358,46 @@ describe('SessionService', () => {
       (repository.findOne as jest.Mock).mockResolvedValue(session);
 
       await expect(service.sendSeen('sess-uuid-1', '123@c.us')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ── markUnread (markChatUnread) ───────────────────────────────────
+
+  describe('markUnread', () => {
+    it('should delegate to engine.markUnread with the chatId', async () => {
+      const session = createMockSession();
+      (repository.findOne as jest.Mock).mockResolvedValue(session);
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+
+      await service.start('sess-uuid-1');
+      mockEngine.markUnread.mockResolvedValue(true);
+
+      const result = await service.markUnread('sess-uuid-1', '123@c.us');
+
+      expect(mockEngine.markUnread).toHaveBeenCalledWith('123@c.us');
+      expect(result).toBe(true);
+    });
+
+    it('should throw BadRequestException when session is not started', async () => {
+      const session = createMockSession();
+      (repository.findOne as jest.Mock).mockResolvedValue(session);
+
+      await expect(service.markUnread('sess-uuid-1', '123@c.us')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ── onQRCode WebSocket emit ───────────────────────────────────────
+
+  describe('onQRCode', () => {
+    it('emits the QR over the WebSocket so subscribed clients get it without polling', async () => {
+      (repository.findOne as jest.Mock).mockResolvedValue(createMockSession());
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+      await service.start('sess-uuid-1');
+      const callbacks = (mockEngine.initialize.mock.calls as [EngineEventCallbacks][])[0][0];
+
+      callbacks.onQRCode?.('qr-data-123');
+
+      expect(eventsGateway.emitQRCode).toHaveBeenCalledWith('sess-uuid-1', 'qr-data-123');
     });
   });
 

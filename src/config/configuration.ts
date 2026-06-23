@@ -21,7 +21,9 @@ export default () => ({
   // Main Database configuration (always SQLite for boot config)
   database: {
     type: 'sqlite' as const,
-    database: './data/main.sqlite',
+    // SQLite file for the auth/audit DB. Overridable (e.g. e2e points it at a temp file) so tests
+    // never write api keys into the developer's ./data/main.sqlite.
+    database: process.env.MAIN_DATABASE_NAME || './data/main.sqlite',
     // Schema management for the auth/audit DB. Default ON (zero-config first boot).
     // Set MAIN_DATABASE_SYNCHRONIZE=false to manage schema via the main-owned migrations
     // instead (migrationsRun then creates api_keys/audit_logs). When disabled, run the
@@ -109,6 +111,23 @@ export default () => ({
       .split(',')
       .map(proxy => proxy.trim())
       .filter(Boolean),
+  },
+
+  // Plugin platform configuration
+  plugins: {
+    // Where installed plugins live on disk (matches the plugin loader's default).
+    dir: process.env.PLUGINS_DIR || './plugins',
+    // Remote catalog of installable plugins (JSON array; the OpenWA-plugins repo's plugins.json).
+    // Fetched through the SSRF guard — add its host to SSRF_ALLOWED_HOSTS if it is not publicly resolvable.
+    catalogUrl:
+      process.env.PLUGIN_CATALOG_URL || 'https://raw.githubusercontent.com/rmyndharis/OpenWA-plugins/main/plugins.json',
+    // Cap on a plugin .zip downloaded by install-from-URL (matches the 5 MB upload limit). Fail-safe:
+    // a non-numeric or non-positive value (parseInt → NaN/0/-n) falls back to the default rather than
+    // silently disabling the cap (a downstream `??` would not catch NaN).
+    downloadMaxBytes: (() => {
+      const n = parseInt(process.env.PLUGIN_DOWNLOAD_MAX_BYTES ?? '', 10);
+      return Number.isFinite(n) && n > 0 ? n : 5 * 1024 * 1024;
+    })(),
   },
 
   // Storage configuration

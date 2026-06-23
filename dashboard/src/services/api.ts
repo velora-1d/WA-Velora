@@ -284,8 +284,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   // Get API key from sessionStorage for authentication
   const apiKey = sessionStorage.getItem('openwa_api_key');
 
+  // For FormData (file uploads) let the browser set multipart/form-data + boundary itself.
+  const isFormData = options.body instanceof FormData;
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(apiKey ? { 'X-API-Key': apiKey } : {}),
     ...options.headers,
   };
@@ -319,6 +321,29 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   return response.json();
 }
 
+/** Like {@link request} but returns the raw response text — e.g. a plugin's HTML config-UI bundle. */
+async function requestText(endpoint: string): Promise<string> {
+  const apiKey = sessionStorage.getItem('openwa_api_key');
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    headers: { ...(apiKey ? { 'X-API-Key': apiKey } : {}) },
+  });
+
+  if (response.status === 401) {
+    sessionStorage.removeItem('openwa_api_key');
+    if (typeof window !== 'undefined') {
+      window.location.assign('/');
+      return new Promise<string>(() => {});
+    }
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
+
+  return response.text();
+}
+
 // =============================================================================
 // Session API
 // =============================================================================
@@ -342,6 +367,11 @@ export const sessionApi = {
   getChats: (id: string) => request<Chat[]>(`/sessions/${id}/chats`),
   markChatRead: (id: string, chatId: string) =>
     request<{ success: boolean }>(`/sessions/${id}/chats/read`, {
+      method: 'POST',
+      body: JSON.stringify({ chatId }),
+    }),
+  markChatUnread: (id: string, chatId: string) =>
+    request<{ success: boolean }>(`/sessions/${id}/chats/unread`, {
       method: 'POST',
       body: JSON.stringify({ chatId }),
     }),
@@ -575,15 +605,21 @@ export const settingsApi = {
 // Plugin Types
 // =============================================================================
 
-/** Field definition within a plugin's config schema (mirrors the backend PluginConfigSchema). */
+/** Field definition within a plugin's config schema (mirrors the backend PluginConfigField). */
 export interface PluginConfigField {
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+  // 'textarea' is a multi-line string; a field with `enum` renders as a <select>.
+  type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'textarea';
   title?: string;
   description?: string;
   default?: unknown;
   enum?: unknown[];
   required?: boolean;
   secret?: boolean;
+  min?: number;
+  max?: number;
+  pattern?: string;
+  items?: PluginConfigField; // array element schema; array-of-rows when items.type === 'object'
+  properties?: Record<string, PluginConfigField>; // nested-object fields
 }
 
 export interface PluginConfigSchema {
@@ -604,6 +640,8 @@ export interface Plugin {
   provides: string[];
   /** Declared config fields, when the plugin exposes a schema (drives the dashboard config form). */
   configSchema?: PluginConfigSchema;
+  /** When set, the plugin ships a sandboxed-iframe config editor (preferred over configSchema). */
+  configUi?: { entry: string; height?: number };
   loadedAt?: string;
   enabledAt?: string;
   error?: string;
@@ -616,6 +654,26 @@ export interface Engine {
   features: string[];
   /** Underlying engine library (e.g. whatsapp-web.js 1.34.7), distinct from the adapter version. */
   library?: { name: string; version: string };
+}
+
+/** A remote catalog entry annotated with this instance's install state. */
+export interface CatalogPlugin {
+  id: string;
+  name: string;
+  version: string;
+  type?: string;
+  status?: string;
+  description?: string;
+  author?: string;
+  license?: string;
+  keywords?: string[];
+  minOpenWAVersion?: string;
+  testedOpenWAVersion?: string;
+  homepage?: string;
+  download?: string;
+  installed: boolean;
+  installedVersion: string | null;
+  updateAvailable: boolean;
 }
 
 // =============================================================================
@@ -639,6 +697,19 @@ export const pluginsApi = {
       body: JSON.stringify({ config }),
     }),
   healthCheck: (id: string) => request<{ healthy: boolean; message?: string }>(`/plugins/${id}/health`),
+  install: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<Plugin>('/plugins/install', { method: 'POST', body: form });
+  },
+  installFromUrl: (url: string) =>
+    request<Plugin>('/plugins/install-url', { method: 'POST', body: JSON.stringify({ url }) }),
+  updateFromUrl: (id: string, url: string) =>
+    request<Plugin>(`/plugins/${id}/update`, { method: 'POST', body: JSON.stringify({ url }) }),
+  catalog: () => request<CatalogPlugin[]>('/plugins/catalog'),
+  /** Fetch a plugin's sandboxed config-UI entry HTML (the API key stays here, in the parent). */
+  getConfigUi: (id: string) => requestText(`/plugins/${id}/config-ui`),
+  uninstall: (id: string) => request<{ success: boolean; message: string }>(`/plugins/${id}`, { method: 'DELETE' }),
   getEngines: () => request<Engine[]>('/infra/engines'),
   getCurrentEngine: () => request<{ engineType: string }>('/infra/engines/current'),
 };

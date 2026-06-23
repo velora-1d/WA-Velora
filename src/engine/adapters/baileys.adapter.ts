@@ -381,7 +381,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
     this.sock = null;
     this.setStatus(EngineStatus.DISCONNECTED);
     await this.config.messageStore?.clearSession(this.config.sessionId).catch(() => undefined);
-    // ponytail: leaves the multi-file auth dir on disk; a fresh link overwrites it. Add fs cleanup if
+    // leaves the multi-file auth dir on disk; a fresh link overwrites it. Add fs cleanup if
     // stale creds ever block re-linking.
   }
 
@@ -685,6 +685,19 @@ export class BaileysAdapter implements IWhatsAppEngine {
       return false; // nothing known to mark read
     }
     await this.sock!.readMessages([last.key]);
+    return true;
+  }
+
+  async markUnread(chatId: string): Promise<boolean> {
+    this.ensureReady();
+    const last = this.sessionStore.lastMessage(chatId);
+    if (!last) {
+      return false; // Baileys' unread toggle needs the last message; can't synthesize it
+    }
+    await this.sock!.chatModify(
+      { markRead: false, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
+      chatId,
+    );
     return true;
   }
 

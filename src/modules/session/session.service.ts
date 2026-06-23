@@ -463,6 +463,10 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
 
         void this.webhookService.dispatch(id, 'session.qr', { sessionId: id, qr });
 
+        // Push the QR to subscribed dashboard clients over the WebSocket (the `session.qr` event is
+        // advertised + consumed there, so clients can render it live instead of polling GET /qr).
+        this.eventsGateway.emitQRCode(id, qr);
+
         // Execute hook for QR event
         void this.hookManager.execute(
           'session:qr',
@@ -713,6 +717,17 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
             ack: deliveryStatusToAck(status),
           });
         }
+
+        // Notify plugins of the delivery/read receipt. The `message:ack` hook event was declared in
+        // the HookEvent union but never emitted, so any plugin registered for it silently never fired.
+        // Fire-and-forget: an ack is a notification with nothing downstream to cancel, so the hook's
+        // `continue` flag is moot. Delivery failures surface here as status `failed` — `message:failed`
+        // stays reserved for send-time send failures, which carry a distinct `{ error, input }` payload.
+        void this.hookManager.execute(
+          'message:ack',
+          { messageId, status, ack: deliveryStatusToAck(status) },
+          { sessionId: id, source: 'Engine' },
+        );
       },
       onMessageRevoked: (message): void => {
         if (!this.isLiveEngine(id, engine)) return;
@@ -1110,6 +1125,17 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
     }
 
     return engine.sendSeen(chatId);
+  }
+
+  async markUnread(id: string, chatId: string): Promise<boolean> {
+    await this.findOne(id); // Verify session exists
+    const engine = this.engines.get(id);
+
+    if (!engine) {
+      throw new BadRequestException('Session is not started');
+    }
+
+    return engine.markUnread(chatId);
   }
 
   async deleteChat(id: string, chatId: string): Promise<boolean> {
